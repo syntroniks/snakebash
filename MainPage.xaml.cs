@@ -24,12 +24,9 @@ namespace HiddenListener
     /// </summary>
     public sealed partial class MainPage : Page
     {
-        private BluetoothLEAdvertisementWatcher bluetoothLEAdvertisementWatcher;
-
         public MainPage()
         {
             this.InitializeComponent();
-            var a = new BluetoothAdvertisementsModel();
         }
     }
 }

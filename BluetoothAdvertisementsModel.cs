@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Linq;
@@ -12,66 +13,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Windows.Devices.Bluetooth.Advertisement;
 using Windows.System.Threading;
+using Windows.UI.Core;
+using Windows.UI.Xaml.Data;
 
 namespace HiddenListener
 {
-    public abstract class BTAdvertisementFilterBase
-    {
-        public abstract bool PacketMatches(BluetoothLEAdvertisement adv);
-    }
-
-    public sealed class EddystoneAdvertisementFilter : BTAdvertisementFilterBase
-    {
-        private readonly Guid EDDYSTONE_SERVICE_GUID = new Guid("0000feaa-0000-1000-8000-00805f9b34fb");
-
-        public override bool PacketMatches(BluetoothLEAdvertisement adv)
-        {
-            if (adv.ServiceUuids.Count > 0 &&
-                adv.ServiceUuids.Contains(EDDYSTONE_SERVICE_GUID))
-            {
-                // device is eddystone device
-                return true;
-            }
-            return false;
-        }
-    }
-
-    public sealed class iBeaconAdvertisementFilter : BTAdvertisementFilterBase
-    {
-        private readonly short APPLE_COMPANY_ID = 0x004C;
-        private readonly byte[] APPLE_IBEACON_SELECTOR = new byte[] { 0x02, 0x15 };
-
-        public override bool PacketMatches(BluetoothLEAdvertisement adv)
-        {
-            if (adv.ManufacturerData.Count > 0)
-            {
-                // Select Apple branded manufacturer specific data
-                // that has a beacon identifying sequence in it
-                var matchingManufacturerData = adv.ManufacturerData.Where((n) =>
-                {
-                    // we have apple data -- let's make sure it is a beacon type
-                    if (n.CompanyId == APPLE_COMPANY_ID)
-                    {
-                        // data length has to include some magic bytes (tag & data length) to indicate that it is a beacon
-                        if (n.Data.Length >= 2)
-                        {
-                            return n.Data.ToArray(0, 2).SequenceEqual(APPLE_IBEACON_SELECTOR);
-                        }
-                    }
-                    // default case is to reject
-                    return false;
-                });
-
-                // If we got at least one match, mark this device as OK to go through
-                if (matchingManufacturerData.Count() > 0)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-    }
-
     public class BluetoothAdvertisementsModel : BindableBase, IDisposable
     {
         private readonly TimeSpan UPLOAD_INTERVAL = TimeSpan.FromSeconds(30);
@@ -87,6 +33,15 @@ namespace HiddenListener
         // we will be accessing this concurrent dictionary from multiple threads, so just use a concurrent one.
         private ConcurrentDictionary<ulong, BluetoothLEAdvertisementReceivedEventArgs> btAddressToLatestAdvertisementEventMap = new ConcurrentDictionary<ulong, BluetoothLEAdvertisementReceivedEventArgs>();
 
+        private ObservableCollection<BluetoothLEAdvertisementReceivedEventArgs> _filteredScans = new ObservableCollection<BluetoothLEAdvertisementReceivedEventArgs>();
+
+        public ObservableCollection<BluetoothLEAdvertisementReceivedEventArgs> FilteredScans
+        {
+            get { return _filteredScans; }
+            set { SetProperty(ref _filteredScans, value); }
+        }
+
+
         // periodic (30 second) timer tries to upload scan results to a web service
         private ThreadPoolTimer periodicTimer;
 
@@ -98,7 +53,7 @@ namespace HiddenListener
 
             var baseUri = new Uri("http://data.sparkfun.com/input/");
             var streamUri = new Uri(baseUri, publicKey);
-            
+
             // All the matched advertisement packets in this interval
             var valuesArray = this.btAddressToLatestAdvertisementEventMap.Values.ToArray();
 
@@ -115,7 +70,7 @@ namespace HiddenListener
                 HttpClient http = new System.Net.Http.HttpClient();
                 Debug.WriteLine($"Sending data to phant stream {streamUri.ToString() + queryParameters}");
                 HttpResponseMessage response = await http.GetAsync(streamUri.ToString() + queryParameters);
-                if (response.StatusCode == System.Net.HttpStatusCode.OK || 
+                if (response.StatusCode == System.Net.HttpStatusCode.OK ||
                     response.StatusCode == System.Net.HttpStatusCode.Accepted ||
                     response.StatusCode == System.Net.HttpStatusCode.Created)
                 {
