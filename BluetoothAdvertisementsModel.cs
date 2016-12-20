@@ -74,6 +74,8 @@ namespace HiddenListener
 
     public class BluetoothAdvertisementsModel : BindableBase, IDisposable
     {
+        private readonly TimeSpan UPLOAD_INTERVAL = TimeSpan.FromSeconds(30);
+
         // Advertisement filters select matching packets
         private List<BTAdvertisementFilterBase> advertFilters = new List<BTAdvertisementFilterBase>();
 
@@ -102,14 +104,40 @@ namespace HiddenListener
 
             for (int i = 0; i < valuesArray.Length; i++)
             {
+                var item = valuesArray[i];
                 // reformat the address to a more familiar format
-                var macBytes = BitConverter.GetBytes(valuesArray[i].BluetoothAddress);
+                var macBytes = BitConverter.GetBytes(item.BluetoothAddress).Take(6).ToArray();
                 var macString = BitConverter.ToString(macBytes);
-                var queryParameters = $"?mac={macString}&timestamp={valuesArray[i].Timestamp.ToUnixTimeSeconds()}&misc_data=0";
+                var queryParameters = $"?private_key={privateKey}&mac={macString}" +
+                                      $"&timestamp={item.Timestamp.ToUnixTimeSeconds()}" +
+                                      $"&type={GetDeviceType(item.Advertisement)}&rssi={item.RawSignalStrengthInDBm}&misc_data=0";
 
                 HttpClient http = new System.Net.Http.HttpClient();
                 Debug.WriteLine($"Sending data to phant stream {streamUri.ToString() + queryParameters}");
                 HttpResponseMessage response = await http.GetAsync(streamUri.ToString() + queryParameters);
+                if (response.StatusCode == System.Net.HttpStatusCode.OK || 
+                    response.StatusCode == System.Net.HttpStatusCode.Accepted ||
+                    response.StatusCode == System.Net.HttpStatusCode.Created)
+                {
+                    // this element has been uploaded, it is now safe to remove
+                    btAddressToLatestAdvertisementEventMap[item.BluetoothAddress] = null;
+                }
+            }
+        }
+
+        private string GetDeviceType(BluetoothLEAdvertisement advertisement)
+        {
+            if (new EddystoneAdvertisementFilter().PacketMatches(advertisement))
+            {
+                return "EDDYSTONE";
+            }
+            else if (new iBeaconAdvertisementFilter().PacketMatches(advertisement))
+            {
+                return "IBEACON";
+            }
+            else
+            {
+                return "";
             }
         }
 
@@ -121,7 +149,7 @@ namespace HiddenListener
             bluetoothLEAdvertisementWatcher.Received += BluetoothLEAdvertisementWatcher_Received;
             bluetoothLEAdvertisementWatcher.Start();
 
-            periodicTimer = ThreadPoolTimer.CreatePeriodicTimer(PeriodicEventUpload, TimeSpan.FromSeconds(10));
+            periodicTimer = ThreadPoolTimer.CreatePeriodicTimer(PeriodicEventUpload, UPLOAD_INTERVAL);
         }
 
         private void BluetoothLEAdvertisementWatcher_Received(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementReceivedEventArgs args)
