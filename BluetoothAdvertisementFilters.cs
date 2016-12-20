@@ -8,7 +8,6 @@ using Windows.Devices.Bluetooth.Advertisement;
 
 namespace HiddenListener
 {
-
     /// <summary>
     /// This base class represents a generic advertisement filter
     /// </summary>

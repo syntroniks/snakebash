@@ -97,9 +97,12 @@
     </Compile>
     <Compile Include="BluetoothAdvertisementFilters.cs" />
     <Compile Include="BluetoothAdvertisementsModel.cs" />
+    <Compile Include="DataUploaderBase.cs" />
+    <Compile Include="HiddenListenerData.cs" />
     <Compile Include="MainPage.xaml.cs">
       <DependentUpon>MainPage.xaml</DependentUpon>
     </Compile>
+    <Compile Include="PhantDataUploader.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

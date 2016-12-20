@@ -11,6 +11,5 @@
     </Page.DataContext>
 
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-        <ListView ItemsSource="{Binding FilteredScans}"/>
     </Grid>
 </Page>

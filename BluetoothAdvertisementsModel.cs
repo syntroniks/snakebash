@@ -32,70 +32,12 @@ namespace HiddenListener
         // (note: eddystone addresses change, and may/must be resolved with eids if you need to track them)
         // we will be accessing this concurrent dictionary from multiple threads, so just use a concurrent one.
         private ConcurrentDictionary<ulong, BluetoothLEAdvertisementReceivedEventArgs> btAddressToLatestAdvertisementEventMap = new ConcurrentDictionary<ulong, BluetoothLEAdvertisementReceivedEventArgs>();
-
-        private ObservableCollection<BluetoothLEAdvertisementReceivedEventArgs> _filteredScans = new ObservableCollection<BluetoothLEAdvertisementReceivedEventArgs>();
-
-        public ObservableCollection<BluetoothLEAdvertisementReceivedEventArgs> FilteredScans
-        {
-            get { return _filteredScans; }
-            set { SetProperty(ref _filteredScans, value); }
-        }
-
-
+        
+        private HashSet<HiddenListenerData> _scanData = new HashSet<HiddenListenerData>();
+        
         // periodic (30 second) timer tries to upload scan results to a web service
         private ThreadPoolTimer periodicTimer;
-
-        private async void PeriodicEventUpload(ThreadPoolTimer timer)
-        {
-            // upload
-            var publicKey = "RMxw8yD6KATwDjDg9jD3";
-            var privateKey = "lzE1VB25ebfBpoprzop9"; // mac, misc_data, timestamp
-
-            var baseUri = new Uri("http://data.sparkfun.com/input/");
-            var streamUri = new Uri(baseUri, publicKey);
-
-            // All the matched advertisement packets in this interval
-            var valuesArray = this.btAddressToLatestAdvertisementEventMap.Values.ToArray();
-
-            for (int i = 0; i < valuesArray.Length; i++)
-            {
-                var item = valuesArray[i];
-                // reformat the address to a more familiar format
-                var macBytes = BitConverter.GetBytes(item.BluetoothAddress).Take(6).ToArray();
-                var macString = BitConverter.ToString(macBytes);
-                var queryParameters = $"?private_key={privateKey}&mac={macString}" +
-                                      $"&timestamp={item.Timestamp.ToUnixTimeSeconds()}" +
-                                      $"&type={GetDeviceType(item.Advertisement)}&rssi={item.RawSignalStrengthInDBm}&misc_data=0";
-
-                HttpClient http = new System.Net.Http.HttpClient();
-                Debug.WriteLine($"Sending data to phant stream {streamUri.ToString() + queryParameters}");
-                HttpResponseMessage response = await http.GetAsync(streamUri.ToString() + queryParameters);
-                if (response.StatusCode == System.Net.HttpStatusCode.OK ||
-                    response.StatusCode == System.Net.HttpStatusCode.Accepted ||
-                    response.StatusCode == System.Net.HttpStatusCode.Created)
-                {
-                    // this element has been uploaded, it is now safe to remove
-                    btAddressToLatestAdvertisementEventMap[item.BluetoothAddress] = null;
-                }
-            }
-        }
-
-        private string GetDeviceType(BluetoothLEAdvertisement advertisement)
-        {
-            if (new EddystoneAdvertisementFilter().PacketMatches(advertisement))
-            {
-                return "EDDYSTONE";
-            }
-            else if (new iBeaconAdvertisementFilter().PacketMatches(advertisement))
-            {
-                return "IBEACON";
-            }
-            else
-            {
-                return "";
-            }
-        }
-
+        
         public BluetoothAdvertisementsModel()
         {
             advertFilters.Add(new EddystoneAdvertisementFilter());
@@ -106,6 +48,17 @@ namespace HiddenListener
 
             periodicTimer = ThreadPoolTimer.CreatePeriodicTimer(PeriodicEventUpload, UPLOAD_INTERVAL);
         }
+        private async void PeriodicEventUpload(ThreadPoolTimer timer)
+        {
+            // upload
+            var publicKey = "RMxw8yD6KATwDjDg9jD3";
+            var privateKey = "lzE1VB25ebfBpoprzop9"; // mac, misc_data, timestamp
+            var baseUri = new Uri("http://data.sparkfun.com/input/");
+            var uploader = new PhantDataUploader(publicKey, privateKey, baseUri);
+            await uploader.Upload(_scanData);
+            _scanData.Clear();
+            return;
+        }
 
         private void BluetoothLEAdvertisementWatcher_Received(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementReceivedEventArgs args)
         {
@@ -114,6 +67,22 @@ namespace HiddenListener
             {
                 if (advertFilters[i].PacketMatches(args.Advertisement))
                 {
+                    if (advertFilters[i].GetType() == typeof(iBeaconAdvertisementFilter))
+                    {
+                        var candidateData = new iBeaconHiddenListenerData(args);
+                        if (_scanData.Where((n) => n.Address == candidateData.Address ).Count() == 0)
+                        {
+                            _scanData.Add(candidateData);
+                        }
+                    }
+                    else if (advertFilters[i].GetType() == typeof(EddystoneAdvertisementFilter))
+                    {
+                        var candidateData = new EddystoneHiddenListenerData(args);
+                        if (_scanData.Where((n) => n.Address == candidateData.Address).Count() == 0)
+                        {
+                            _scanData.Add(candidateData);
+                        }
+                    }
                     // we got a hit, save it and break out
                     btAddressToLatestAdvertisementEventMap[args.BluetoothAddress] = args;
                     break;
