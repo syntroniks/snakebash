@@ -1,11 +1,17 @@
 ﻿using Prism.Mvvm;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.Diagnostics;
 using System.Linq;
+using System.Net.Http;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Windows.Devices.Bluetooth.Advertisement;
+using Windows.System.Threading;
 
 namespace HiddenListener
 {
@@ -68,10 +74,44 @@ namespace HiddenListener
 
     public class BluetoothAdvertisementsModel : BindableBase, IDisposable
     {
-        // need advert filters
+        // Advertisement filters select matching packets
         private List<BTAdvertisementFilterBase> advertFilters = new List<BTAdvertisementFilterBase>();
+
+        // The advertisement watcher listenes to BLE advertisements and reports them to our application
         private BluetoothLEAdvertisementWatcher bluetoothLEAdvertisementWatcher = new BluetoothLEAdvertisementWatcher();
-        private Dictionary<ulong, BluetoothLEAdvertisementReceivedEventArgs> btAddressToLatestAdvertisementEventMap = new Dictionary<ulong, BluetoothLEAdvertisementReceivedEventArgs>();
+
+        // this address -> advertisement data map lets us associate advertisement data with a bt address
+        // (note: eddystone addresses change, and may/must be resolved with eids if you need to track them)
+        // we will be accessing this concurrent dictionary from multiple threads, so just use a concurrent one.
+        private ConcurrentDictionary<ulong, BluetoothLEAdvertisementReceivedEventArgs> btAddressToLatestAdvertisementEventMap = new ConcurrentDictionary<ulong, BluetoothLEAdvertisementReceivedEventArgs>();
+
+        // periodic (30 second) timer tries to upload scan results to a web service
+        private ThreadPoolTimer periodicTimer;
+
+        private async void PeriodicEventUpload(ThreadPoolTimer timer)
+        {
+            // upload
+            var publicKey = "RMxw8yD6KATwDjDg9jD3";
+            var privateKey = "lzE1VB25ebfBpoprzop9"; // mac, misc_data, timestamp
+
+            var baseUri = new Uri("http://data.sparkfun.com/input/");
+            var streamUri = new Uri(baseUri, publicKey);
+            
+            // All the matched advertisement packets in this interval
+            var valuesArray = this.btAddressToLatestAdvertisementEventMap.Values.ToArray();
+
+            for (int i = 0; i < valuesArray.Length; i++)
+            {
+                // reformat the address to a more familiar format
+                var macBytes = BitConverter.GetBytes(valuesArray[i].BluetoothAddress);
+                var macString = BitConverter.ToString(macBytes);
+                var queryParameters = $"?mac={macString}&timestamp={valuesArray[i].Timestamp.ToUnixTimeSeconds()}&misc_data=0";
+
+                HttpClient http = new System.Net.Http.HttpClient();
+                Debug.WriteLine($"Sending data to phant stream {streamUri.ToString() + queryParameters}");
+                HttpResponseMessage response = await http.GetAsync(streamUri.ToString() + queryParameters);
+            }
+        }
 
         public BluetoothAdvertisementsModel()
         {
@@ -80,10 +120,13 @@ namespace HiddenListener
 
             bluetoothLEAdvertisementWatcher.Received += BluetoothLEAdvertisementWatcher_Received;
             bluetoothLEAdvertisementWatcher.Start();
+
+            periodicTimer = ThreadPoolTimer.CreatePeriodicTimer(PeriodicEventUpload, TimeSpan.FromSeconds(10));
         }
 
         private void BluetoothLEAdvertisementWatcher_Received(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementReceivedEventArgs args)
         {
+            // give each of the filters a chance to flag a packet for further processing
             for (int i = 0; i < advertFilters.Count; i++)
             {
                 if (advertFilters[i].PacketMatches(args.Advertisement))
@@ -109,7 +152,7 @@ namespace HiddenListener
                 disposedValue = true;
             }
         }
-        
+
         // This code added to correctly implement the disposable pattern.
         public void Dispose()
         {
