@@ -37,7 +37,13 @@ namespace HiddenListener
         
         // periodic (30 second) timer tries to upload scan results to a web service
         private ThreadPoolTimer periodicTimer;
-        
+
+        private DataUploaderBase dataUploader = new LogglyDataUploader(new Uri("http://logs-01.loggly.com/inputs/8bb73a13-dda0-4260-ba2d-9038b09e6091/tag/http/"));
+        //string phantPublicKey = "RMxw8yD6KATwDjDg9jD3";
+        //string phantPrivateKey = "lzE1VB25ebfBpoprzop9"; // mac, misc_data, timestamp
+        //Uri phantBaseUri = new Uri("http://data.sparkfun.com/input/");
+        //private DataUploaderBase dataUploader = new new PhantDataUploader(phantPublicKey, phantPrivateKey, phantBaseUri);
+
         public BluetoothAdvertisementsModel()
         {
             advertFilters.Add(new EddystoneAdvertisementFilter());
@@ -51,11 +57,7 @@ namespace HiddenListener
         private async void PeriodicEventUpload(ThreadPoolTimer timer)
         {
             // upload
-            var publicKey = "RMxw8yD6KATwDjDg9jD3";
-            var privateKey = "lzE1VB25ebfBpoprzop9"; // mac, misc_data, timestamp
-            var baseUri = new Uri("http://data.sparkfun.com/input/");
-            var uploader = new PhantDataUploader(publicKey, privateKey, baseUri);
-            await uploader.Upload(_scanData);
+            await dataUploader.Upload(_scanData);
             _scanData.Clear();
             return;
         }

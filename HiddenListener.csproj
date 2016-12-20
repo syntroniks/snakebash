@@ -99,6 +99,7 @@
     <Compile Include="BluetoothAdvertisementsModel.cs" />
     <Compile Include="DataUploaderBase.cs" />
     <Compile Include="HiddenListenerData.cs" />
+    <Compile Include="LogglyDataUploader.cs" />
     <Compile Include="MainPage.xaml.cs">
       <DependentUpon>MainPage.xaml</DependentUpon>
     </Compile>

@@ -1,25 +1,21 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 
 namespace HiddenListener
 {
-    public class PhantDataUploader : DataUploaderBase
+    public class LogglyDataUploader : DataUploaderBase
     {
-        private string _publicKey;
-        private string _privateKey;
         private Uri _baseUri;
 
-        public PhantDataUploader(string publicKey, string privateKey, Uri baseUri)
+        public LogglyDataUploader(Uri baseUri)
             : base()
         {
-            _publicKey = publicKey;
-            _privateKey = privateKey;
             _baseUri = baseUri;
         }
 
@@ -29,7 +25,6 @@ namespace HiddenListener
             return Task.Run(async () =>
             {
                 var streamUri = new UriBuilder(_baseUri);
-                streamUri.Path = Path.Combine("input", _publicKey);
 
                 // All the matched advertisement packets in this interval
                 var valuesArray = data.ToArray();
@@ -37,14 +32,11 @@ namespace HiddenListener
                 for (int i = 0; i < valuesArray.Length; i++)
                 {
                     var item = valuesArray[i];
-                    var queryParameters = $"private_key={_privateKey}&mac={item.Address}" +
-                                          $"&timestamp={item.TimeCaptured.ToUnixTimeSeconds()}" +
-                                          $"&type={item.BeaconType}&rssi={item.RSSI}&misc_data=0";
-                    streamUri.Query = queryParameters;
+                    HttpContent content = new StringContent(JsonConvert.SerializeObject(item));
 
                     HttpClient http = new System.Net.Http.HttpClient();
-                    Debug.WriteLine($"Sending data to phant stream {streamUri.ToString()}");
-                    HttpResponseMessage response = await http.GetAsync(streamUri.Uri);
+                    Debug.WriteLine($"Sending data to loggly stream {streamUri.ToString()}");
+                    HttpResponseMessage response = await http.PostAsync(streamUri.Uri, content);
                     if (response.StatusCode == System.Net.HttpStatusCode.OK ||
                         response.StatusCode == System.Net.HttpStatusCode.Accepted ||
                         response.StatusCode == System.Net.HttpStatusCode.Created)
