@@ -32,9 +32,9 @@ namespace HiddenListener
         // (note: eddystone addresses change, and may/must be resolved with eids if you need to track them)
         // we will be accessing this concurrent dictionary from multiple threads, so just use a concurrent one.
         private ConcurrentDictionary<ulong, BluetoothLEAdvertisementReceivedEventArgs> btAddressToLatestAdvertisementEventMap = new ConcurrentDictionary<ulong, BluetoothLEAdvertisementReceivedEventArgs>();
-        
-        private HashSet<HiddenListenerData> _scanData = new HashSet<HiddenListenerData>();
-        
+
+        private List<HiddenListenerData> _scanData = new List<HiddenListenerData>();
+
         // periodic (30 second) timer tries to upload scan results to a web service
         private ThreadPoolTimer periodicTimer;
 
@@ -72,17 +72,42 @@ namespace HiddenListener
                     if (advertFilters[i].GetType() == typeof(iBeaconAdvertisementFilter))
                     {
                         var candidateData = new iBeaconHiddenListenerData(args);
-                        if (_scanData.Where((n) => n.Address == candidateData.Address ).Count() == 0)
+
+                        // If there isn't an element in this list
+                        if (_scanData.Where((n) => n.Address == candidateData.Address).Count() == 0)
                         {
+                            // add it
                             _scanData.Add(candidateData);
+                        }
+                        else
+                        {
+                            // Otherwise update the existing item
+                            for (int j = 0; j < _scanData.Count; j++)
+                            {
+                                if (_scanData[j].Address == candidateData.Address)
+                                {
+                                    _scanData[j] = candidateData;
+                                }
+                            }
                         }
                     }
                     else if (advertFilters[i].GetType() == typeof(EddystoneAdvertisementFilter))
                     {
                         var candidateData = new EddystoneHiddenListenerData(args);
+
                         if (_scanData.Where((n) => n.Address == candidateData.Address).Count() == 0)
                         {
                             _scanData.Add(candidateData);
+                        }
+                        else
+                        {
+                            for (int j = 0; j < _scanData.Count; j++)
+                            {
+                                if (_scanData[j].Address == candidateData.Address)
+                                {
+                                    _scanData[j] = candidateData;
+                                }
+                            }
                         }
                     }
                     // we got a hit, save it and break out
