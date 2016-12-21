@@ -13,8 +13,8 @@ Supported beacon protocols
 
 Supported datastores
 * [phant](https://data.sparkfun.com/)
+* [loggly](https://www.loggly.com/)
 
 Planned datastore support
-* [loggly](https://www.loggly.com/)
 * [freeboard](https://freeboard.io/)
 * [Keen.io](https://Keen.io/)
